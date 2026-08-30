@@ -19,3 +19,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 strip = true
+
+[profile.test-release]
+inherits = "release"
+debug = false

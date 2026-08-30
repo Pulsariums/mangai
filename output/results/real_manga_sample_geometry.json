@@ -1,0 +1,46 @@
+{
+  "source_image": "test_images/real_manga_sample.png",
+  "width": 800,
+  "height": 1200,
+  "block_count": 1,
+  "blocks": [
+    {
+      "id": 0,
+      "text": "DOOOOM!",
+      "confidence": 0.9808323979377747,
+      "center": [
+        582.0,
+        891.0
+      ],
+      "size": [
+        18.0,
+        114.0
+      ],
+      "angle": 90.0,
+      "polygon": [
+        [
+          525.0,
+          882.0
+        ],
+        [
+          639.0,
+          882.0
+        ],
+        [
+          639.0,
+          900.0
+        ],
+        [
+          525.0,
+          900.0
+        ]
+      ],
+      "area": 2052.0,
+      "aspect_ratio": 0.15789473684210525,
+      "pixel_count": 2185,
+      "chars": 7,
+      "pixel_per_char": 312.14285714285717,
+      "mask_file": "masks/block_000.png"
+    }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "source_image": "test_images/sample_manga_text.png",
+  "width": 800,
+  "height": 1200,
+  "block_count": 2,
+  "blocks": [
+    {
+      "id": 0,
+      "text": "1",
+      "confidence": 0.5629175305366516,
+      "center": [
+        283.5,
+        323.5
+      ],
+      "size": [
+        43.0,
+        73.0
+      ],
+      "angle": 90.0,
+      "polygon": [
+        [
+          247.0,
+          302.0
+        ],
+        [
+          320.0,
+          302.0
+        ],
+        [
+          320.0,
+          345.0
+        ],
+        [
+          247.0,
+          345.0
+        ]
+      ],
+      "area": 3139.0,
+      "aspect_ratio": 0.589041095890411,
+      "pixel_count": 3256,
+      "chars": 1,
+      "pixel_per_char": 3256.0,
+      "mask_file": "masks/block_000.png"
+    },
+    {
+      "id": 1,
+      "text": "L",
+      "confidence": 0.6545026898384094,
+      "center": [
+        556.5,
+        786.5
+      ],
+      "size": [
+        35.0,
+        105.0
+      ],
+      "angle": 90.0,
+      "polygon": [
+        [
+          504.0,
+          769.0
+        ],
+        [
+          609.0,
+          769.0
+        ],
+        [
+          609.0,
+          804.0
+        ],
+        [
+          504.0,
+          804.0
+        ]
+      ],
+      "area": 3675.0,
+      "aspect_ratio": 0.3333333333333333,
+      "pixel_count": 3816,
+      "chars": 1,
+      "pixel_per_char": 3816.0,
+      "mask_file": "masks/block_001.png"
+    }
+  ]
+}

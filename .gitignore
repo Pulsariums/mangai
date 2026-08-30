@@ -1,78 +1,48 @@
 ```
+# Build artifacts and outputs
+--save-masks/
+output/
+*.png
+*.json
+
 # Dependencies
 node_modules/
-vendor/
-target/
-.cargo/
+Cargo.lock
+bun.lock
 
-# Python
+# Tauri specific
+src-tauri/gen/
+
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
-env/
-venv/
-.venv/
-.ENV
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
+
+# Logs
 *.log
-*.pot
-*.pyc
-*.pyo
-*.pyd
-.MF
-.TemporaryItems
-.trash
-*
-!src/
-!src-tauri/
 
-# Build artifacts
-dist/
-build/
-*.o
-*.obj
-*.exe
-*.dll
-*.so
-*.a
-*.out
-
-# Tauri specific
-src-tauri/target/
-src-tauri/gen/
-
-# Environment variables
+# Environment
 .env
 .env.local
 .env.*
 
-# IDE
+# Editors
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Logs
-*.log
-
 # Coverage
 coverage/
 htmlcov/
 .coverage
-```.next/
-.next/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+```

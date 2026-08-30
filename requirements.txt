@@ -1,0 +1,71 @@
+# Manga/Manhwa Otomatik Çeviri Pipeline - Gereksinimler
+
+## Python Sürümü
+Python 3.8+ önerilir
+
+## Temel Kütüphaneler
+
+### OpenCV ve Görüntü İşleme
+opencv-python>=4.5.0
+Pillow>=9.0.0
+numpy>=1.20.0
+
+### OCR Motoru (PaddleOCR)
+# PaddleOCR manga/manhwa için önerilen OCR motorudur
+paddlepaddle>=2.4.0  # CPU versiyonu
+# paddlepaddle-gpu>=2.4.0  # GPU varsa bunu kullanın
+paddleocr>=2.6.0
+
+# Alternatif: manga-ocr (sadece Japonca manga için)
+# manga-ocr>=0.1.0
+
+### Konfigürasyon
+pyyaml>=6.0
+
+### İleri Fazlar İçin (Şimdilik Gerekli Değil)
+
+# FAZ 2: LLM API
+# google-generativeai>=0.5.0  # Gemini API
+# aiosqlite>=0.19.0  # SQLite için async destek
+
+# FAZ 3: İnpainting
+# iopaint>=1.0.0  # LaMa inpainting
+# opencv-contrib-python>=4.5.0  # PatchMatch için
+
+# FAZ 4: Render Engine
+# pycairo>=1.20.0  # Cairo render
+# pangocairo>=1.0.0  # Pango text layout
+# veya
+# skia-python>=88.0  # Skia alternatif
+
+## Kurulum
+
+### Temel Kurulum (FAZ 1 için)
+```bash
+pip install -r requirements.txt
+```
+
+### GPU Desteği (Opsiyonel, Hızlandırılmış OCR için)
+```bash
+# NVIDIA GPU varsa
+pip uninstall paddlepaddle
+pip install paddlepaddle-gpu
+```
+
+### Tam Kurulum (Tüm Fazlar için)
+```bash
+pip install -r requirements_full.txt
+```
+
+## Notlar
+
+1. **PaddleOCR İlk Çalıştırma:** İlk çalıştırmada model dosyalarını otomatik indirir (~200MB). İnternet bağlantısı gereklidir.
+
+2. **Manga-OCR Alternatifi:** Eğer sadece Japonca manga çevirecekseniz, `manga-ocr` daha iyi sonuç verebilir. Ancak PaddleOCR çok dilli destek sağlar.
+
+3. **Performans:** Büyük görseller için GPU önerilir. CPU'da da çalışır ancak yavaş olabilir.
+
+4. **Sistem Gereksinimleri:**
+   - Minimum RAM: 4GB
+   - Önerilen RAM: 8GB+
+   - Disk: 1GB+ (model dosyaları için)

@@ -1,3 +1,3 @@
 fn main() {
-    println!("Hello, world!");
+    manga_translator::run();
 }

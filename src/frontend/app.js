@@ -1,8 +1,6 @@
-// Theme Management
 const themeToggle = document.getElementById('themeToggle');
 const htmlElement = document.documentElement;
 
-// Load saved theme or default to light mode
 const savedTheme = localStorage.getItem('theme') || 'light';
 htmlElement.setAttribute('data-theme', savedTheme);
 
@@ -13,7 +11,6 @@ themeToggle.addEventListener('click', () => {
     localStorage.setItem('theme', newTheme);
 });
 
-// File Upload Handling
 const dropZone = document.getElementById('dropZone');
 const fileInput = document.getElementById('fileInput');
 const imageGrid = document.getElementById('imageGrid');
@@ -23,24 +20,16 @@ const exportBtn = document.getElementById('exportBtn');
 
 let uploadedImages = [];
 
-// Click to upload
-dropZone.addEventListener('click', () => {
-    fileInput.click();
-});
+dropZone.addEventListener('click', () => fileInput.click());
 
-fileInput.addEventListener('change', (e) => {
-    handleFiles(e.target.files);
-});
+fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
 
-// Drag and drop
 dropZone.addEventListener('dragover', (e) => {
     e.preventDefault();
     dropZone.classList.add('dragover');
 });
 
-dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('dragover');
-});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
 
 dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
@@ -49,10 +38,7 @@ dropZone.addEventListener('drop', (e) => {
 });
 
 function handleFiles(files) {
-    const imageFiles = Array.from(files).filter(file => 
-        file.type.startsWith('image/')
-    );
-
+    const imageFiles = Array.from(files).filter(file => file.type.startsWith('image/'));
     if (imageFiles.length === 0) return;
 
     emptyState.style.display = 'none';
@@ -105,14 +91,9 @@ function renderImageCard(imageData) {
 function removeImage(id) {
     uploadedImages = uploadedImages.filter(img => img.id !== id);
     const card = document.querySelector(`.image-card[data-id="${id}"]`);
-    if (card) {
-        card.remove();
-    }
+    if (card) card.remove();
     
-    if (uploadedImages.length === 0) {
-        emptyState.style.display = 'flex';
-    }
-    
+    if (uploadedImages.length === 0) emptyState.style.display = 'flex';
     updateButtonStates();
 }
 
@@ -128,7 +109,6 @@ function updateButtonStates() {
     exportBtn.disabled = !hasImages;
 }
 
-// Process Button
 processBtn.addEventListener('click', async () => {
     const apiKey = document.getElementById('apiKey').value;
     const sourceLang = document.getElementById('sourceLang').value;
@@ -147,7 +127,6 @@ processBtn.addEventListener('click', async () => {
     
     progressContainer.style.display = 'flex';
     
-    // Simulate processing (in real app, this would call Rust backend)
     for (let i = 0; i < uploadedImages.length; i++) {
         const image = uploadedImages[i];
         image.status = 'processing';
@@ -156,8 +135,7 @@ processBtn.addEventListener('click', async () => {
         progressText.textContent = `Processing ${i + 1}/${uploadedImages.length}: ${image.name}`;
         progressFill.style.width = `${((i + 1) / uploadedImages.length) * 100}%`;
         
-        // Simulate API call delay
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await new Promise(resolve => setTimeout(resolve, 800));
         
         image.status = 'completed';
         updateImageStatus(image.id, 'completed');
@@ -185,17 +163,13 @@ function updateImageStatus(id, status) {
     }
 }
 
-// Export Button
 exportBtn.addEventListener('click', () => {
-    // In real app, this would export results from Rust backend
     alert('Export functionality will be implemented in the Rust backend');
 });
 
-// Tauri integration (when running as desktop/mobile app)
 if (window.__TAURI__) {
     const { invoke } = window.__TAURI__.core;
     
-    // Override process function to call Rust backend
     processBtn.addEventListener('click', async () => {
         const apiKey = document.getElementById('apiKey').value;
         const sourceLang = document.getElementById('sourceLang').value;

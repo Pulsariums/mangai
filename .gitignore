@@ -67,3 +67,4 @@ coverage/
 .next/
 dist/
 build/
+node_modules/

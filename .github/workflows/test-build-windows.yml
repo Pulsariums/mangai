@@ -1,0 +1,158 @@
+name: '🧪 Test Build (Windows Only)'
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_mode:
+        description: 'Build modu (test-release = hızlı, release = full opt)'
+        required: true
+        default: 'test-release'
+        type: choice
+        options:
+          - test-release
+          - release
+          - debug
+      upload_artifacts:
+        description: 'Artifact olarak yükle'
+        required: true
+        default: true
+        type: boolean
+      channel:
+        description: 'Sürüm kanalı'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - stable
+          - beta
+          - alpha
+      version:
+        description: 'Sürüm override (OPSİYONEL)'
+        required: false
+        type: string
+        default: ''
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sürümü hesapla
+        id: meta
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -f "scripts/next-version.sh" ]; then
+            TAG="$(bash scripts/next-version.sh "$INPUT_CHANNEL" "$INPUT_VERSION")"
+          else
+            TAG="v0.1.0-$INPUT_CHANNEL.1"
+          fi
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$INPUT_CHANNEL" >> "$GITHUB_OUTPUT"
+
+  windows:
+    runs-on: windows-latest
+    needs: [prepare]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Cache Tauri bundler
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: windows-tauri-bundler
+          restore-keys: |
+            windows-tauri-bundler-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            windows-bun-
+
+      - name: Check package.json
+        id: check-pkg
+        shell: pwsh
+        run: |
+          if (Test-Path "package.json") {
+            echo "exists=true" >> $env:GITHUB_OUTPUT
+          } else {
+            echo "exists=false" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Install frontend dependencies
+        if: steps.check-pkg.outputs.exists == 'true'
+        run: bun install
+
+      - name: Set Version
+        if: always()
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          else
+            echo "Version script bulunamadı, varsayılan sürüm kullanılıyor."
+          fi
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: false
+          prerelease: false
+          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '' }} --verbose
+
+      - name: Upload artifacts
+        if: github.event.inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-${{ github.event.inputs.build_mode }}
+          path: src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          if-no-files-found: warn
+          retention-days: 7

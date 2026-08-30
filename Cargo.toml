@@ -1,0 +1,53 @@
+[package]
+name = "manga_translator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Tauri v2 for cross-platform UI (mobile + desktop)
+tauri = { version = "2", features = [] }
+tauri-build = { version = "2", features = [] }
+
+# Image processing
+image = "0.25"
+opencv = "0.92"
+
+# OCR with PaddleOCR bindings
+paddle-ocr = "0.3"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# HTTP client for Gemini API
+reqwest = { version = "0.12", features = ["json"] }
+
+# JSON handling
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SQLite for translation memory
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# Configuration
+config = "0.14"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"
+
+# UUID for unique IDs
+uuid = { version = "1", features = ["v4"] }
+
+# Base64 for image encoding
+base64 = "0.22"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

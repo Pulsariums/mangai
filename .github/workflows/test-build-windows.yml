@@ -43,8 +43,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
-      tag: ${{ steps.meta.outputs.tag }}
-      channel: ${{ steps.meta.outputs.channel }}
     steps:
       - uses: actions/checkout@v4
       - name: Sürümü hesapla
@@ -53,7 +51,6 @@ jobs:
         env:
           INPUT_CHANNEL: ${{ inputs.channel }}
           INPUT_VERSION: ${{ inputs.version }}
-          GH_TOKEN: ${{ github.token }}
         run: |
           if [ -f "scripts/next-version.sh" ]; then
             TAG="$(bash scripts/next-version.sh "$INPUT_CHANNEL" "$INPUT_VERSION")"
@@ -61,9 +58,7 @@ jobs:
             TAG="v0.1.0-$INPUT_CHANNEL.1"
           fi
           VERSION="${TAG#v}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "channel=$INPUT_CHANNEL" >> "$GITHUB_OUTPUT"
 
   windows:
     runs-on: windows-latest
@@ -97,14 +92,6 @@ jobs:
           restore-keys: |
             windows-cargo-
 
-      - name: Cache Tauri bundler
-        uses: actions/cache@v4
-        with:
-          path: ~\AppData\Local\tauri
-          key: windows-tauri-bundler
-          restore-keys: |
-            windows-tauri-bundler-
-
       - name: Cache Bun
         uses: actions/cache@v4
         with:
@@ -113,28 +100,16 @@ jobs:
           restore-keys: |
             windows-bun-
 
-      - name: Check package.json
-        id: check-pkg
-        shell: pwsh
-        run: |
-          if (Test-Path "package.json") {
-            echo "exists=true" >> $env:GITHUB_OUTPUT
-          } else {
-            echo "exists=false" >> $env:GITHUB_OUTPUT
-          }
-
       - name: Install frontend dependencies
-        if: steps.check-pkg.outputs.exists == 'true'
         run: bun install
 
       - name: Set Version
-        if: always()
         shell: bash
         run: |
           if [ -f "scripts/set-version.mjs" ]; then
             node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
           else
-            echo "Version script bulunamadı, varsayılan sürüm kullanılıyor."
+            echo "Version script bulunamadı."
           fi
 
       - name: Build Tauri App
@@ -144,6 +119,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          projectPath: src-tauri
+          appBundlePath: src-tauri
           releaseDraft: false
           prerelease: false
           args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '' }} --verbose

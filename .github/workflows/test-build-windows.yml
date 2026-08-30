@@ -119,11 +119,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: src-tauri
-          appBundlePath: src-tauri
           releaseDraft: false
           prerelease: false
-          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '' }} --verbose
+          args: --config src-tauri/tauri.conf.json ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '' }} --verbose
 
       - name: Upload artifacts
         if: github.event.inputs.upload_artifacts == 'true'

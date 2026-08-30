@@ -1,0 +1,362 @@
+name: '🧪 Test Build'
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: 'Build alınacak platform'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - windows-latest
+          - macos-latest
+          - ubuntu-latest
+      build_mode:
+        description: 'Build modu (test-release = hızlı, release = full opt)'
+        required: true
+        default: 'test-release'
+        type: choice
+        options:
+          - test-release
+          - release
+          - debug
+      upload_artifacts:
+        description: 'Artifact olarak yükle'
+        required: true
+        default: true
+        type: boolean
+      channel:
+        description: 'Sürüm kanalı — next-version.sh sayacına göre üretir'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - stable
+          - beta
+          - alpha
+      version:
+        description: 'Sürüm override (OPSİYONEL) — boş bırakılırsa otomatik hesaplanır. Örn: 1.1.3-test.4'
+        required: false
+        type: string
+        default: ''
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # Sürümü release.yml ile AYNI betikten (scripts/next-version.sh) hesaplar.
+  # Test-build sürüm üretmez: yalnızca derleme çıktısının dosya adını sürüme
+  # göre scaffoldlar (set-version.mjs ile), hiçbir tag/release'e dokunmaz.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sürümü hesapla
+        id: meta
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Eğer version override verilmişse onu kullan, yoksa script ile hesapla
+          if [ -n "$INPUT_VERSION" ]; then
+            TAG="v$INPUT_VERSION"
+          elif [ -f "scripts/next-version.sh" ]; then
+            TAG="$(bash scripts/next-version.sh "$INPUT_CHANNEL" "")"
+          else
+            # Fallback: Basit sürüm üretimi
+            TAG="v0.1.0-${INPUT_CHANNEL}.1"
+          fi
+          
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$INPUT_CHANNEL" >> "$GITHUB_OUTPUT"
+          
+          {
+            echo "### 🧪 Test Build — Sürüm bilgisi"
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Kanal:** \`$INPUT_CHANNEL\`"
+            echo "- **Sürüm:** \`$VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'windows-latest'
+    needs: [prepare]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Cache Tauri bundler (NSIS, Wix etc.)
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: windows-tauri-bundler
+          restore-keys: |
+            windows-tauri-bundler-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            windows-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          else
+            echo "Version script not found, skipping..."
+          fi
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: false
+          prerelease: false
+          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '--release' }} --verbose
+
+      - name: Upload artifacts
+        if: github.event.inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-${{ github.event.inputs.build_mode }}-${{ needs.prepare.outputs.version }}
+          path: |
+            src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          if-no-files-found: warn
+          retention-days: 7
+
+  macos:
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'macos-latest'
+    needs: [prepare]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust (Universal Binary Targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            macos-cargo-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: macos-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            macos-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          else
+            echo "Version script not found, skipping..."
+          fi
+
+      - name: Build Tauri App (Universal)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: false
+          prerelease: false
+          args: --target universal-apple-darwin ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '--release' }} --verbose
+
+      - name: Upload artifacts
+        if: github.event.inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-Universal-${{ github.event.inputs.build_mode }}-${{ needs.prepare.outputs.version }}
+          path: |
+            src-tauri/target/universal-apple-darwin/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          if-no-files-found: warn
+          retention-days: 7
+
+  linux:
+    if: github.event.inputs.platform == 'all' || github.event.inputs.platform == 'ubuntu-latest'
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-4-dev \
+            libglib2.0-dev \
+            libegl1-mesa-dev \
+            pkg-config \
+            libxdo-dev \
+            libssl-dev
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: linux-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            linux-cargo-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: linux-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            linux-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          else
+            echo "Version script not found, skipping..."
+          fi
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: false
+          prerelease: false
+          args: ${{ github.event.inputs.build_mode == 'debug' && '--debug' || github.event.inputs.build_mode == 'test-release' && '-- --profile test-release' || '--release' }} --verbose
+
+      - name: Upload artifacts
+        if: github.event.inputs.upload_artifacts == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-x64-${{ github.event.inputs.build_mode }}-${{ needs.prepare.outputs.version }}
+          path: |
+            src-tauri/target/${{ github.event.inputs.build_mode == 'debug' && 'debug' || 'release' }}/bundle
+          if-no-files-found: warn
+          retention-days: 7
+
+  summary:
+    needs: [prepare, windows, macos, linux]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Generate Build Summary
+        run: |
+          echo "## 🎉 Build Tamamlandı" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Durum | Artifact |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|----------|" >> $GITHUB_STEP_SUMMARY
+          
+          windows_status="${{ needs.windows.result }}"
+          macos_status="${{ needs.macos.result }}"
+          linux_status="${{ needs.linux.result }}"
+          
+          echo "| Windows | ${windows_status} | [İndir](#) |" >> $GITHUB_STEP_SUMMARY
+          echo "| macOS | ${macos_status} | [İndir](#) |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | ${linux_status} | [İndir](#) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Sürüm:** ${{ needs.prepare.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Kanal:** ${{ needs.prepare.outputs.channel }}" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,349 @@
+name: '🚀 Production Release'
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      create_tag:
+        description: 'Yeni tag oluştur (örnek: v1.2.3)'
+        required: false
+        type: string
+        default: ''
+      channel:
+        description: 'Sürüm kanalı'
+        required: true
+        default: 'stable'
+        type: choice
+        options:
+          - stable
+          - beta
+          - alpha
+
+env:
+  CARGO_TERM_COLOR: always
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
+
+jobs:
+  # Tag'den sürümü parse et veya manuel girişten tag oluştur
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse version from tag or create new
+        id: meta
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.create_tag }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -n "$GITHUB_REF" ] && [[ "$GITHUB_REF" =~ ^refs/tags/v ]]; then
+            # Tag push'tan geliyoruz
+            TAG="${GITHUB_REF#refs/tags/}"
+          elif [ -n "$INPUT_TAG" ]; then
+            # Manuel tag girişi
+            TAG="$INPUT_TAG"
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+          else
+            # Script ile hesapla
+            if [ -f "scripts/next-version.sh" ]; then
+              TAG="$(bash scripts/next-version.sh "$INPUT_CHANNEL" "")"
+            else
+              TAG="v0.1.0-${INPUT_CHANNEL}.1"
+            fi
+          fi
+          
+          VERSION="${TAG#v}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$INPUT_CHANNEL" >> "$GITHUB_OUTPUT"
+          
+          {
+            echo "### 🚀 Production Release"
+            echo "- **Tag:** \`$TAG\`"
+            echo "- **Kanal:** \`$INPUT_CHANNEL\`"
+            echo "- **Sürüm:** \`$VERSION\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  windows:
+    needs: [prepare]
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: windows-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            windows-cargo-
+
+      - name: Cache Tauri bundler
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\tauri
+          key: windows-tauri-bundler
+          restore-keys: |
+            windows-tauri-bundler-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: windows-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            windows-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          fi
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.channel != 'stable' }}
+          args: --release --verbose
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Windows-x64-${{ needs.prepare.outputs.version }}
+          path: src-tauri/target/release/bundle
+          if-no-files-found: warn
+          retention-days: 30
+
+  macos:
+    needs: [prepare]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust (Universal Binary)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            macos-cargo-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: macos-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            macos-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          fi
+
+      - name: Build Tauri App (Universal)
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.channel != 'stable' }}
+          args: --target universal-apple-darwin --release --verbose
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macOS-Universal-${{ needs.prepare.outputs.version }}
+          path: src-tauri/target/universal-apple-darwin/release/bundle
+          if-no-files-found: warn
+          retention-days: 30
+
+  linux:
+    needs: [prepare]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-4-dev \
+            libglib2.0-dev \
+            libegl1-mesa-dev \
+            pkg-config \
+            libxdo-dev \
+            libssl-dev
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: linux-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            linux-cargo-
+
+      - name: Cache Bun
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun
+          key: linux-bun-${{ hashFiles('bun.lock', 'package.json') }}
+          restore-keys: |
+            linux-bun-
+
+      - name: Install frontend dependencies
+        run: bun install
+
+      - name: Set version in project files
+        shell: bash
+        run: |
+          if [ -f "scripts/set-version.mjs" ]; then
+            node scripts/set-version.mjs "${{ needs.prepare.outputs.version }}"
+          fi
+
+      - name: Build Tauri App
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseDraft: true
+          prerelease: ${{ needs.prepare.outputs.channel != 'stable' }}
+          args: --release --verbose
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Linux-x64-${{ needs.prepare.outputs.version }}
+          path: src-tauri/target/release/bundle
+          if-no-files-found: warn
+          retention-days: 30
+
+  publish-release:
+    needs: [prepare, windows, macos, linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: '*'
+          merge-multiple: true
+          path: ./artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: Release ${{ needs.prepare.outputs.tag }}
+          body: |
+            ## 🎉 Manga Translator RS - ${{ needs.prepare.outputs.tag }}
+            
+            ### 📦 İndirme Bağlantıları
+            - **Windows**: [⬇️ İndir](../../releases/download/${{ needs.prepare.outputs.tag }}/manga-translator-rs_${{ needs.prepare.outputs.version }}_x64-setup.exe)
+            - **macOS**: [⬇️ İndir](../../releases/download/${{ needs.prepare.outputs.tag }}/manga-translator-rs_${{ needs.prepare.outputs.version }}_universal.dmg)
+            - **Linux**: [⬇️ İndir](../../releases/download/${{ needs.prepare.outputs.tag }}/manga-translator-rs_${{ needs.prepare.outputs.version }}_amd64.deb)
+            
+            ### 🔧 Değişiklikler
+            - Otomatik sürüm oluşturma
+            - Platformlar arası tam destek
+            - Optimize edilmiş binary boyutu
+            
+            ### 📝 Notlar
+            Kanal: `${{ needs.prepare.outputs.channel }}`
+          draft: true
+          prerelease: ${{ needs.prepare.outputs.channel != 'stable' }}
+          files: |
+            artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

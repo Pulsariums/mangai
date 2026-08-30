@@ -75,3 +75,4 @@ coverage/
 htmlcov/
 .coverage
 ```.next/
+.next/
